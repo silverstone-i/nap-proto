@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: controllers/accounts.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: controllers/accounts.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// @ts-nocheck
+
+'use strict';
+
+// ./admin/controllers/accounts.js
+// Manages /admin/setup/accounts route
+
+/** Express router providing account related routes
+ * @module routers/accounts
+ * @requires express
+ * @requires multer
+ * @requires '../../services/xlsx'
+ */
+
+/**
+ * Routes to mange data in the accounts table.
+ * @type {object}
+ * @const
+ * @namespace accountsRouter
+ */
+
+const multer = require('multer');
+const router = require('express').Router();
+const { getExcelRows, writeExcelRows } = require('../../services/xlsx');
+
+module.exports = router;
+
+// Multer configuration
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
+/**
+ * Get all data in accounts table.
+ * @name GET/
+ * @function
+ * @memberof module:routers/accounts~accountsRouter
+ * @inner
+ * @param {string} path - Router path - /admin/setup/accounts
+ * @param {callback} middleware - Express middleware.
+ * @return {DTO[]} dto - Array of all records found
+ * @return {string} message - Error message or 'No records found'
+ */
+router.get('/', (req, res) => {
+    const columns = req.db.accounts.originalSchema.columns.map(
+        (column) => column.name
+    );
+
+    // Get all data
+    req.db.accounts
+        .findAll(columns)
+        .then((dto) =>
+            dto.length > 0
+                ? res.json(dto)
+                : res.status(200).json({ message: 'No records found' })
+        )
+        .catch((err) => res.status(500).json({ message: `${err.message}` }));
+});
+
+/**
+ * Get record that matches provided criteria
+ * @name GET/:column/:value
+ * @function
+ * @memberof module:routers/accounts~accountsRouter
+ * @inner
+ * @param {string} path - Router path - /admin/setup/accounts
+ * @param {callback} middleware - Express middleware.
+ * @return {DTO} dto - Selected record
+ * @return {string} message - Error message or 'No records found'
+ * @example
+ * ...
+ * url = http://localhost:2828/admin/setup/accounts/name/CC%201?account_id&amp;name&amp;description
+ * creates query string SELECT "account_id","name","description" FROM accounts WHERE "name" = 'CC 1';
+ * ...
+ */
+router.get('/:column/:value', (req, res) => {
+    const columns = Object.keys(req.query);
+    const column = req.params.column;
+    const value = req.params.value;
+
+    req.db.accounts
+        .findWhere(columns, column, value)
+        .then((dto) =>
+            dto
+                ? res.json(dto)
+                : res.status(200).json({ message: 'No records found' })
+        )
+        .catch((err) => res.status(500).json({ message: `${err.message}` }));
+});
+
+/**
+ * Insert new account in accounts table
+ * @name POST/insert
+ * @function
+ * @memberof module:routers/accounts~accountsRouter
+ * @inner
+ * @param {string} path - Router path - /admin/setup/accounts/insert
+ * @param {callback} middleware - Middleware.
+ * @param {DTO} req.body - Data to be inserted
+ * @return {string} message -Error or 'Data was inserted'
+ */
+router.post('/insert', (req, res) => {
+    const dto = req.body;
+    const user = req.user;
+
+    if (dto instanceof Array) {
+        dto.forEach((row) => {
+            // eslint-disable-next-line no-param-reassign
+            row.created_by = user;
+        });
+    } else {
+        dto.created_by = user;
+    }
+
+    req.db.accounts
+        .insert(dto)
+        .then(() => res.json({ message: 'Data was inserted' }))
+        .catch((err) => res.status(500).json({ message: `${err.message}` }));
+});
+
+/** Updates record in accounts table
+ * @name PUT/update
+ * @function
+ * @memberof module:routers/accounts~accountsRouter
+ * @inner
+ * @param {string} path - Router path - /admin/setup/accounts/update
+ * @param {callback} middleware - Middleware.
+ * @param {DTO} req.body - Data to be updated
+ * @return {string} message -Error or 'Record was updated'
+ * @example
+ * ...
+ * // DTO to be processed
+ * const dto = {
+ *      company_id: '010',      // PRIMARY KEY - Required
+ *      active: false,           // Column to be updated - At least 1 column is required
+ * }
+ * ...
+ */
+router.put('/update', (req, res) => {
+    const dto = req.body;
+    const user = req.user;
+
+    dto.updated_by = user;
+
+    req.db.accounts
+        .update(dto)
+        .then(() => res.json({ message: 'Record was updated' }))
+        .catch((err) => res.status(500).json({ message: `${err.message}` }));
+});
+
+/**
+ * Import records from excel file
+ * @name POST/import_xslx/:sheet
+ * @function
+ * @memberof module:routers/accounts~accountsRouter
+ * @inner
+ * @param {string} path - Router path - /admin/setup/accounts/import_xslx/:sheet
+ * @param {callback} middleware - Middleware.
+ * @return {string} message - Error or 'Data was imported'
+ */
+router.post('/import_xslx/:sheet', upload.single('file'), (req, res) => {
+    // Access the uploaded file data from req.file.buffer
+    // @ts-ignore
+    const fileBuffer = req.file.buffer;
+    const sheetNo = +req.params.sheet;
+
+    getExcelRows(sheetNo, fileBuffer, 'nap-admin')
+        .then((dto) =>
+            // @ts-ignore
+            req.db.accounts
+                .insert(dto)
+                .then(() => res.json({ message: 'Data was imported' }))
+                .catch((err) => res.status(500).send(err.message))
+        )
+        .catch((err) => res.status(400).json({ message: `${err.message}` }));
+});
+
+/**
+ * Export records or headers only to excel file
+ * @name GET/export_xslx
+ * @function
+ * @memberof module:routers/accounts~accountsRouter
+ * @inner
+ * @param {string} path - Router path - /admin/setup/accounts/export_xslx
+ * @param {callback} middleware - Middleware.
+ * @param {boolean} headersOnly - True if only headers are to be exported
+ * @return {Buffer} buffer - File buffer containing exported data
+ * @return {string} message - Error
+ * @example Usage to print all records
+ * ...
+ * const url = 'http://localhost:2828/admin/setup/accounts/export_xslx?headersOnly=false'
+ * ...
+ * Usage to print headers only
+ * ...
+ * const url = 'http://localhost:2828/admin/setup/accounts/export_xslx?headersOnly=true'
+ * ...
+ */
+router.get('/export_xslx', (req, res) => {
+    const headersOnly = req.query.headersOnly === 'true';
+
+    // Get an array of column headers from the defined schema
+    const columns = req.db.accounts.originalSchema.columns.map(
+        (column) => column.name
+    );
+    // Get all data in table
+    req.db.accounts
+        // eslint-disable-next-line quotes, prettier/prettier
+        .findAll(columns)
+        .then((dto) => writeExcelRows(dto, headersOnly))
+        .then((buffer) => {
+            // Set the appropriate headers for the response
+            res.setHeader(
+                'Content-Disposition',
+                'attachment; filename="accounts.xlsx"'
+            );
+            res.setHeader(
+                'Content-Type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            );
+
+            // Send the buffer as the response
+            res.send(buffer);
+        })
+        .catch((err) => {
+            res.status(500).json({ message: `${err.message}` });
+        });
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">nap-accounting</a></h2><h3>Modules</h3><ul><li><a href="module-routers_accounts.html">routers/accounts</a></li><li><a href="module-routers_admin.html">routers/admin</a></li><li><a href="module-routers_classifications.html">routers/classifications</a></li><li><a href="module-routers_companies.html">routers/companies</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-routers_accounts-accountsRouter.html">accountsRouter</a></li><li><a href="module-routers_admin-adminRouter.html">adminRouter</a></li><li><a href="module-routers_classifications-classificationsRouter.html">classificationsRouter</a></li><li><a href="module-routers_companies-companiesRouter.html">companiesRouter</a></li></ul><h3>Classes</h3><ul><li><a href="Companies.html">Companies</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.2</a> on Mon Jun 05 2023 02:09:20 GMT-0400 (Eastern Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

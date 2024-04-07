@@ -1,0 +1,54 @@
+{
+    "env": {
+        // "browser": true,
+        "commonjs": true,
+        // "es2021": true,
+        "node": true
+    },
+    "extends": [
+        "airbnb", 
+        "prettier"
+    ],
+    "plugins":[ 
+        "prettier",
+        "plugin:@typescript-eslint/recommended"
+    ], 
+    "overrides": [
+    ],
+    "parserOptions": {
+        "scourceType": "script"
+        // "ecmaVersion": "latest"
+    },
+    "rules": {
+        "prettier/prettier": "error",
+        "no-unused-vars": "warn",
+        "no-console": "off",
+        "strict": "off",
+        "prefer-destructuring": "off",
+        "func-names": "off",
+        "arrow-body-style": [
+            "error", 
+            "as-needed"
+        ],
+        "import/no-extraneous-dependencies": [
+            "error", 
+            { "devDependencies": true }
+        ], 
+        "indent": [
+            "error",
+            4
+        ],
+        "linebreak-style": [
+            "error",
+            "unix"
+        ],
+        "quotes": [
+            "error",
+            "single"
+        ],
+        "semi": [
+            "error",
+            "always"
+        ]
+    }
+}
